@@ -23,7 +23,7 @@ var loopEncode = function(i,length,breadth,psnrBitrateCounter) {
         setTimeout(function(){
             processingInputFile(i,length,breadth,psnrBitrateCounter);
             loopEncode(i+5,length,breadth,psnrBitrateCounter+1);
-        }, 120000);
+        }, 180000);
     }
     else {
         processingInputFile(i,length,breadth,psnrBitrateCounter);

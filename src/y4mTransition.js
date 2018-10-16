@@ -1,40 +1,48 @@
-var inputVideoFile = "../resource/BBB2min.mp4";
+var inputVideoFile = "../resource/TOS1min.mp4";
 var ffmpeg = require('fluent-ffmpeg');
 var fs = require('fs');
-var psnrBitrateList = new Array(6);
-for (var i = 0; i < 6; i++) {
+
+var timeOut;
+
+var psnrBitrateList = new Array(12);
+for (var i = 0; i < 12; i++) {
     psnrBitrateList[i] = new Array(2);
 }
-var jsonFile = "../resource/reverse/json.txt";
+var jsonFile = "../resource/reverse/TOS1json.txt";
 
 
-var loopEncode = function(i,length,breadth,psnrBitrateCounter) {
-    if(length==640&&breadth==480&&psnrBitrateCounter>1){
-        length=1080; breadth=720;i=28;
+var loopEncode = function(i,length,breadth,psnrBitrateCounter,timeOut) {
+
+    if(length==640&&breadth==480&&psnrBitrateCounter>3){
+        length=1080; breadth=720;i=18;
     }
-    if(length==1080&&breadth==720&&psnrBitrateCounter>3)
+    if(length==1080&&breadth==720&&psnrBitrateCounter>7)
     {
-        length=1920; breadth=1080;i=28;
+        length=1920; breadth=1080;i=18;
     }
     if (length==1920&&breadth==1080&&i>33) {
         return 1;
     }
-    else if(i!=18){
-        setTimeout(function(){
-            processingInputFile(i,length,breadth,psnrBitrateCounter);
-            loopEncode(i+5,length,breadth,psnrBitrateCounter+1);
-        }, 180000);
+    if(length==640&&breadth==480&&psnrBitrateCounter==0){
+        processingInputFile(i,length,breadth,psnrBitrateCounter);
+        loopEncode(i+5,length,breadth,psnrBitrateCounter+1,timeOut);
     }
     else {
+        setTimeout(function(){
+            processingInputFile(i,length,breadth,psnrBitrateCounter);
+            loopEncode(i+5,length,breadth,psnrBitrateCounter+1,timeOut);
+        }, timeOut);
+    }
+    /*else {
         processingInputFile(i,length,breadth,psnrBitrateCounter);
         loopEncode(i+5,length,breadth,psnrBitrateCounter+1);
-    }
+    }*/
 
 }
 
 function processingInputFile(i,length,breadth,psnrBitrateCounter){
     var outputVideoFile = "../resource/reverse/IntermediateCRFEncoding"+length+"x"+breadth+"_"+i+".mp4";
-    var midOutput = "../resource/reverse/y4mOutput"+length+"x"+breadth+"_"+i+".y4m";
+    var y4mOutput = "../resource/reverse/y4mOutput"+length+"x"+breadth+"_"+i+".y4m";
 
 
 //saving console log message in a text file
@@ -71,7 +79,7 @@ function processingInputFile(i,length,breadth,psnrBitrateCounter){
         .on('end', function (err,stdout, stderr) {
             console.log('Processing CRF encoding finished !');
             console.log(JSON.stringify(stdout, null, " "));
-            y4mcal(i,length,breadth,outputVideoFile,midOutput,psnrBitrateCounter);
+            y4mcal(i,length,breadth,outputVideoFile,y4mOutput,psnrBitrateCounter);
 
 
 
@@ -82,11 +90,11 @@ function processingInputFile(i,length,breadth,psnrBitrateCounter){
 }
 
 //Converting the CRF encoded file to y4m by upscaling to the original video
-function y4mcal(i,length,breadth,outputVideoFile,midOutput,psnrBitrateCounter) {
+function y4mcal(i,length,breadth,outputVideoFile,y4mOutput,psnrBitrateCounter) {
     var y4mConversion = ffmpeg(outputVideoFile)
         .addOption('-pix_fmt')
         .addOption('yuv420p')
-        .addOptions('-vsync', '0', '-s', '1920x1080')
+        .addOptions('-vsync', '0', '-s', '1920x800') //need to change the resolution everytime;cant hardcode
         .outputOption('-sws_flags lanczos')
         .on('start', function (commandLine) {
             console.log('Spawned Ffmpeg with command: ' + commandLine);
@@ -104,15 +112,15 @@ function y4mcal(i,length,breadth,outputVideoFile,midOutput,psnrBitrateCounter) {
         .on('end', function (err, stdout, stderr) {
             console.log('Processing CRF encoding finished !');
             console.log(JSON.stringify(stdout, null, " "));
-            rawTomp4(i,length,breadth,midOutput,psnrBitrateCounter);
+            rawTomp4(i,length,breadth,y4mOutput,outputVideoFile,psnrBitrateCounter);
         })
 
-        .save(midOutput);
+        .save(y4mOutput);
 }
 //Converting raw y4m file to mp4
-function rawTomp4(i,length,breadth,midOutput,psnrBitrateCounter) {
+function rawTomp4(i,length,breadth,y4mOutput,outputVideoFile,psnrBitrateCounter) {
     var finalOutput = "../resource/reverse/finalUpscaledOutput"+length+"x"+breadth+"_"+i+".mp4";
-    var rawToMP4 = ffmpeg(midOutput)
+    var rawToMP4 = ffmpeg(y4mOutput)
         .addOption('-c:v libx264')
         .on('start', function(commandLine) {
             console.log('Spawned Ffmpeg with command: ' + commandLine);
@@ -130,17 +138,18 @@ function rawTomp4(i,length,breadth,midOutput,psnrBitrateCounter) {
         .on('end', function (err,stdout, stderr) {
             console.log('Processing CRF encoding finished !');
             console.log(JSON.stringify(stdout, null, " "));
-            psnrcal(i,length,breadth,midOutput,finalOutput,psnrBitrateCounter);
+            //deleteUnusedFile(outputVideoFile);
+            psnrcal(i,length,breadth,y4mOutput,finalOutput,psnrBitrateCounter);
 
         })
 
         .save(finalOutput);
 }
 //method to calculate PSNR by upscaling the output video file and printing PSNR in a text file
-function psnrcal(i,length,breadth,midOutput,finalOutput,psnrBitrateCounter) {
+function psnrcal(i,length,breadth,y4mOutput,finalOutput,psnrBitrateCounter) {
 
     var psnrAfter = ffmpeg(inputVideoFile)
-        .input(midOutput)
+        .input(y4mOutput)
         .complexFilter(['psnr'])
         .addOption('-f', 'null')
         .on('start', function (commandLine) {
@@ -175,9 +184,9 @@ function psnrcal(i,length,breadth,midOutput,finalOutput,psnrBitrateCounter) {
                 psnrBitrateList[psnrBitrateCounter][0] = averagePSNR[1];
                 psnrBitrateList[psnrBitrateCounter][1] = metadata.streams[0].bit_rate;
                 jsonstream.write("PSNR"+length+"x"+breadth+"_"+i+":"+psnrBitrateList[psnrBitrateCounter][0] + "...Bitrate"+length+"x"+breadth+"_"+i+":"+ psnrBitrateList[psnrBitrateCounter][1] + "\n");
-                deleteY4M(midOutput);
-                if(psnrBitrateCounter==5){
-                    printGraphPoints();
+                deleteUnusedFile(y4mOutput);
+                if(psnrBitrateCounter==8){
+                    printHullPoints();
                 }
             });
 
@@ -187,36 +196,54 @@ function psnrcal(i,length,breadth,midOutput,finalOutput,psnrBitrateCounter) {
         .run();
 }
 
-function deleteY4M(midOutput) {
+function deleteUnusedFile(file) {
     var fs = require("fs");
-    fs.unlinkSync(midOutput);
+    fs.unlinkSync(file);
 }
 
 function mainFn(){
-    loopEncode(28,640,480,0);
+/*    var defer = require('node-defer');
+    var promise = defer(function(){
+        ffmpeg.ffprobe(inputVideoFile, (error, metadata) => {
+            var duration = metadata.format.duration;
+            console.log("duration of the original video is::"+duration);
+            timeOut = duration*2000;
+        });
+    });
+    promise.then(loopEncode(18,640,480,0,timeOut));*/
 
-}
+    function calculateDuration(){
+        return new Promise(function (resolve, reject) {
+            ffmpeg.ffprobe(inputVideoFile, (error, metadata) => {
+                if(error) {
+                    reject(error);
+                } else {
+                    var duration = metadata.format.duration;
+                    console.log("duration of the original video is::" + duration);
+                    timeOut = duration * 6000;
+                    resolve(timeOut);
+                }
+            });
 
-function printGraphPoints() {
-    var r;
+        });
 
-    var fs = require("fs");
-
-/*    fs.writeFile(jsonFile, '', function () {
-        console.log('done overwriting contents of json file if it exists!')
+    }
+    calculateDuration()
+        .then(function (timeOut) {
+        loopEncode(18,640,480,0,timeOut)// promise-returning async function
     });
 
 
+}
 
-    for (r = 0; r < psnrBitrateList.length; r++) {
 
-        console.log("PSNR:"+psnrBitrateList[r][0] + "...Bitrate:"+ psnrBitrateList[r][1] + "\n");
 
-    }*/
+function printHullPoints() {
+    var fs = require("fs");
 
     var hull = require('../lib/hull.js');
-    var hullPoints = new Array(hull(psnrBitrateList, 1000000000));
-    var hullFile = "../resource/reverse/hull.txt";
+    var hullPoints = new Array(hull(psnrBitrateList));
+    var hullFile = "../resource/reverse/TOS1hull.txt";
     fs.writeFile(hullFile, '', function () {
         console.log('done overwriting contents of hull file if it exists!')
     });
@@ -225,7 +252,7 @@ function printGraphPoints() {
     hullstream.write("Here come the Hull Points");
     console.log("Here come the Hull Points");
 
-    for (r = 0; r < hullPoints.length; r++) {
+    for (var r = 0; r < hullPoints.length; r++) {
         for (var k = 0; k < hullPoints[r].length; k++) {
             hullstream.write("\n"+ "HullPSNR:"+hullPoints[r][k][0] + "...HullBitrate:" + hullPoints[r][k][1]);
             console.log("\n"+ "HullPSNR:"+hullPoints[r][k][0] + "...HullBitrate:" + hullPoints[r][k][1]);

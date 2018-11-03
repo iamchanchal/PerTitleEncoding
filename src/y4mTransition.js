@@ -1,44 +1,21 @@
-var inputVideoFile = "../resource/TOS1min.mp4";
+var inputVideoFile = "../resource/TOS10sec.mp4";
 var ffmpeg = require('fluent-ffmpeg');
 var fs = require('fs');
 
 var timeOut;
 
-var psnrBitrateList = new Array(12);
-for (var i = 0; i < 12; i++) {
+var psnrBitrateList = new Array(18);
+for (var i = 0; i < 18; i++) {
     psnrBitrateList[i] = new Array(2);
 }
-var jsonFile = "../resource/reverse/TOS1json.txt";
+var width; var height; var resolution;
+ffmpeg.ffprobe(inputVideoFile, function(err, metadata) {
+    width = metadata.streams[0].width;
+    height = metadata.streams[0].height;
+    resolution = width + "x" + height;
+});
 
-
-var loopEncode = function(i,length,breadth,psnrBitrateCounter,timeOut) {
-
-    if(length==640&&breadth==480&&psnrBitrateCounter>3){
-        length=1080; breadth=720;i=18;
-    }
-    if(length==1080&&breadth==720&&psnrBitrateCounter>7)
-    {
-        length=1920; breadth=1080;i=18;
-    }
-    if (length==1920&&breadth==1080&&i>33) {
-        return 1;
-    }
-    if(length==640&&breadth==480&&psnrBitrateCounter==0){
-        processingInputFile(i,length,breadth,psnrBitrateCounter);
-        loopEncode(i+5,length,breadth,psnrBitrateCounter+1,timeOut);
-    }
-    else {
-        setTimeout(function(){
-            processingInputFile(i,length,breadth,psnrBitrateCounter);
-            loopEncode(i+5,length,breadth,psnrBitrateCounter+1,timeOut);
-        }, timeOut);
-    }
-    /*else {
-        processingInputFile(i,length,breadth,psnrBitrateCounter);
-        loopEncode(i+5,length,breadth,psnrBitrateCounter+1);
-    }*/
-
-}
+var jsonFile = "../resource/reverse/TOS10json.txt";
 
 function processingInputFile(i,length,breadth,psnrBitrateCounter){
     var outputVideoFile = "../resource/reverse/IntermediateCRFEncoding"+length+"x"+breadth+"_"+i+".mp4";
@@ -94,7 +71,7 @@ function y4mcal(i,length,breadth,outputVideoFile,y4mOutput,psnrBitrateCounter) {
     var y4mConversion = ffmpeg(outputVideoFile)
         .addOption('-pix_fmt')
         .addOption('yuv420p')
-        .addOptions('-vsync', '0', '-s', '1920x800') //need to change the resolution everytime;cant hardcode
+        .addOptions('-vsync', '0', '-s', resolution) //need to change the resolution everytime;cant hardcode
         .outputOption('-sws_flags lanczos')
         .on('start', function (commandLine) {
             console.log('Spawned Ffmpeg with command: ' + commandLine);
@@ -172,28 +149,45 @@ function psnrcal(i,length,breadth,y4mOutput,finalOutput,psnrBitrateCounter) {
             var averagePSNR = JSON.stringify(stdout, null, " ").match("average:(.*)min:");
             var fs = require("fs");
             var psnrFile = "../resource/reverse/PSNR"+length+"x"+breadth+"_"+i+".txt";
-            var bitrateFile = "../resource/reverse/Bitrate"+length+"x"+breadth+"_"+i+".txt";
-            fs.writeFile(psnrFile, '', function(){console.log('done overwriting contents of psnr file if it exists!')})
-            var PSNRstream = fs.createWriteStream(psnrFile, {flags:'a'});
-            fs.writeFile(bitrateFile, '', function(){console.log('done overwriting contents of bitrate file if it exists!')})
-            var Bitratestream = fs.createWriteStream(bitrateFile, {flags:'a'});
-            PSNRstream.write(averagePSNR[1]+ "\n");
             var jsonstream = fs.createWriteStream(jsonFile, {flags: 'a'});
             ffmpeg.ffprobe(finalOutput, function(err, metadata) {
-                Bitratestream.write(metadata.streams[0].bit_rate+ "\n");
                 psnrBitrateList[psnrBitrateCounter][0] = averagePSNR[1];
                 psnrBitrateList[psnrBitrateCounter][1] = metadata.streams[0].bit_rate;
                 jsonstream.write("PSNR"+length+"x"+breadth+"_"+i+":"+psnrBitrateList[psnrBitrateCounter][0] + "...Bitrate"+length+"x"+breadth+"_"+i+":"+ psnrBitrateList[psnrBitrateCounter][1] + "\n");
                 deleteUnusedFile(y4mOutput);
-                if(psnrBitrateCounter==8){
+                if(psnrBitrateCounter==17){
                     printHullPoints();
                 }
-            });
+                if (!fs.existsSync(y4mOutput)) {
+                    keepItRunning(i,length,breadth,psnrBitrateCounter);
+                }
 
+            });
 
         })
         .output('nowhere')
         .run();
+}
+
+function keepItRunning(i,length,breadth,psnrBitrateCounter){
+    if(length==640&&breadth==480&&i==38){
+        length=1080; breadth=720;i=18;
+        processingInputFile(i,length,breadth,psnrBitrateCounter+1);
+    }
+    else if(length==1080&&breadth==720&&i==38)
+    {
+        length=1920; breadth=1080;i=18;
+        processingInputFile(i,length,breadth,psnrBitrateCounter+1);
+    }
+    else if (length==1920&&breadth==1080&&i==38) {
+        return 1;
+    }
+    else{
+        processingInputFile(i+5,length,breadth,psnrBitrateCounter+1);
+    }
+
+
+
 }
 
 function deleteUnusedFile(file) {
@@ -201,49 +195,161 @@ function deleteUnusedFile(file) {
     fs.unlinkSync(file);
 }
 
-function mainFn(){
-/*    var defer = require('node-defer');
-    var promise = defer(function(){
-        ffmpeg.ffprobe(inputVideoFile, (error, metadata) => {
-            var duration = metadata.format.duration;
-            console.log("duration of the original video is::"+duration);
-            timeOut = duration*2000;
-        });
-    });
-    promise.then(loopEncode(18,640,480,0,timeOut));*/
-
-    function calculateDuration(){
-        return new Promise(function (resolve, reject) {
-            ffmpeg.ffprobe(inputVideoFile, (error, metadata) => {
-                if(error) {
-                    reject(error);
-                } else {
-                    var duration = metadata.format.duration;
-                    console.log("duration of the original video is::" + duration);
-                    timeOut = duration * 6000;
-                    resolve(timeOut);
-                }
-            });
-
-        });
-
-    }
-    calculateDuration()
-        .then(function (timeOut) {
-        loopEncode(18,640,480,0,timeOut)// promise-returning async function
-    });
-
-
-}
-
-
-
 function printHullPoints() {
     var fs = require("fs");
 
     var hull = require('../lib/hull.js');
-    var hullPoints = new Array(hull(psnrBitrateList));
-    var hullFile = "../resource/reverse/TOS1hull.txt";
+    var hullPoints = new Array(hull(psnrBitrateList,Infinity));
+
+    /***************Highchart Start**********************/
+    var jsdom = require('jsdom');
+    var doc = jsdom.jsdom('<!doctype html><html><body><div id="container"></div></body></html>'),
+        win = doc.defaultView;
+
+    doc.createElementNS = function (ns, tagName) {
+        var elem = doc.createElement(tagName);
+
+        // Set private namespace to satisfy jsdom's getter
+        elem._namespaceURI = ns; // eslint-disable-line no-underscore-dangle
+        /**
+         * Pass Highcharts' test for SVG capabilities
+         * @returns {undefined}
+         */
+        elem.createSVGRect = function () {};
+        /**
+         * jsdom doesn't compute layout (see https://github.com/tmpvar/jsdom/issues/135).
+         * This getBBox implementation provides just enough information to get Highcharts
+         * to render text boxes correctly, and is not intended to work like a general
+         * getBBox implementation. The height of the boxes are computed from the sum of
+         * tspans and their font sizes. The width is based on an average width for each glyph.
+         * It could easily be improved to take font-weight into account.
+         * For a more exact result we could to create a map over glyph widths for several
+         * fonts and sizes, but it may not be necessary for the purpose.
+         * @returns {Object} The bounding box
+         */
+        elem.getBBox = function () {
+            var lineWidth = 0,
+                width = 0,
+                height = 0;
+
+            [].forEach.call(elem.children.length ? elem.children : [elem], function (child) {
+                var fontSize = child.style.fontSize || elem.style.fontSize,
+                    lineHeight,
+                    textLength;
+
+                // The font size and lineHeight is based on empirical values, copied from
+                // the SVGRenderer.fontMetrics function in Highcharts.
+                if (/px/.test(fontSize)) {
+                    fontSize = parseInt(fontSize, 10);
+                } else {
+                    fontSize = /em/.test(fontSize) ? parseFloat(fontSize) * 12 : 12;
+                }
+                lineHeight = fontSize < 24 ? fontSize + 3 : Math.round(fontSize * 1.2);
+                textLength = child.textContent.length * fontSize * 0.55;
+
+                // Tspans on the same line
+                if (child.getAttribute('dx') !== '0') {
+                    height += lineHeight;
+                }
+
+                // New line
+                if (child.getAttribute('dy') !== null) {
+                    lineWidth = 0;
+                }
+
+                lineWidth += textLength;
+                width = Math.max(width, lineWidth);
+
+            });
+
+            return {
+                x: 0,
+                y: 0,
+                width: width,
+                height: height
+            };
+        };
+        return elem;
+    };
+
+    var Highcharts = require('highcharts')(win);
+
+    Highcharts.chart('container', {
+        chart: {
+            type: 'spline'
+        },
+        title: {
+            text: 'PSNR Calculation'
+        },
+        xAxis: {
+            title: {
+                text: 'BITRATE'
+            }
+        },
+        yAxis: {
+            title: {
+                text: 'PSNR'
+            },
+            min: 0
+        },
+        tooltip: {
+            headerFormat: '<b>{series.name}</b><br>',
+            pointFormat: '{point.x:%e. %b}: {point.y:.2f} m'
+        },
+
+        plotOptions: {
+            spline: {
+                marker: {
+                    enabled: true
+                }
+            }
+        },
+
+        colors: ['#6CF', '#39F', '#06C', '#036', '#000'],
+
+        // Define the data points. All series have a dummy year
+        // of 1970/71 in order to be compared on the same x axis. Note
+        // that in JavaScript, months start at 0 for January, 1 for February etc.
+        series: [{
+            name: "480p",
+            data: [
+                [psnrBitrateList[0][1],psnrBitrateList[0][0]],
+                [psnrBitrateList[1][1],psnrBitrateList[1][0]],
+                [psnrBitrateList[2][1],psnrBitrateList[2][0]],
+                [psnrBitrateList[3][1],psnrBitrateList[3][0]],
+                [psnrBitrateList[4][1],psnrBitrateList[4][0]],
+                [psnrBitrateList[5][1],psnrBitrateList[5][0]]
+            ]
+        }, {
+            name: "720p",
+            data: [
+                [psnrBitrateList[6][1],psnrBitrateList[6][0]],
+                [psnrBitrateList[7][1],psnrBitrateList[7][0]],
+                [psnrBitrateList[8][1],psnrBitrateList[8][0]],
+                [psnrBitrateList[9][1],psnrBitrateList[9][0]],
+                [psnrBitrateList[10][1],psnrBitrateList[10][0]],
+                [psnrBitrateList[11][1],psnrBitrateList[11][0]]
+            ]
+        }, {
+            name: "1080p",
+            data: [
+                [psnrBitrateList[12][1],psnrBitrateList[12][0]],
+                [psnrBitrateList[13][1],psnrBitrateList[13][0]],
+                [psnrBitrateList[14][1],psnrBitrateList[14][0]],
+                [psnrBitrateList[15][1],psnrBitrateList[15][0]],
+                [psnrBitrateList[16][1],psnrBitrateList[16][0]],
+                [psnrBitrateList[17][1],psnrBitrateList[17][0]]
+            ]
+        }]
+    });
+    var svg = win.document.getElementById('container').innerHTML;
+    var chartFile="../resource/TOS10Chart.svg";
+    fs.writeFile(chartFile, svg, function () {
+        console.log('Wrote ' + svg.length + ' bytes to ' + 'TOS10Chart.svg.');
+    });
+    /***************Highchart End*********************/
+
+    var hullFile = "../resource/reverse/TOS10hull.txt";
     fs.writeFile(hullFile, '', function () {
         console.log('done overwriting contents of hull file if it exists!')
     });
@@ -262,4 +368,5 @@ function printHullPoints() {
     }
 }
 
-mainFn();
+//mainFn();
+processingInputFile(13,640,480,0);

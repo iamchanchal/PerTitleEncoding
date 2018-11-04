@@ -1,11 +1,11 @@
-var inputVideoFile = "../resource/TOS10sec.mp4";
+var inputVideoFile = "../resource/TOS3sec.mp4";
 var ffmpeg = require('fluent-ffmpeg');
 var fs = require('fs');
 
 var timeOut;
 
-var psnrBitrateList = new Array(18);
-for (var i = 0; i < 18; i++) {
+var psnrBitrateList = new Array(12);
+for (var i = 0; i < 12; i++) {
     psnrBitrateList[i] = new Array(2);
 }
 var width; var height; var resolution;
@@ -151,11 +151,11 @@ function psnrcal(i,length,breadth,y4mOutput,finalOutput,psnrBitrateCounter) {
             var psnrFile = "../resource/reverse/PSNR"+length+"x"+breadth+"_"+i+".txt";
             var jsonstream = fs.createWriteStream(jsonFile, {flags: 'a'});
             ffmpeg.ffprobe(finalOutput, function(err, metadata) {
-                psnrBitrateList[psnrBitrateCounter][0] = averagePSNR[1];
-                psnrBitrateList[psnrBitrateCounter][1] = metadata.streams[0].bit_rate;
+                psnrBitrateList[psnrBitrateCounter][0] = metadata.streams[0].bit_rate;
+                psnrBitrateList[psnrBitrateCounter][1] = parseFloat(averagePSNR[1]);
                 jsonstream.write("PSNR"+length+"x"+breadth+"_"+i+":"+psnrBitrateList[psnrBitrateCounter][0] + "...Bitrate"+length+"x"+breadth+"_"+i+":"+ psnrBitrateList[psnrBitrateCounter][1] + "\n");
                 deleteUnusedFile(y4mOutput);
-                if(psnrBitrateCounter==17){
+                if(psnrBitrateCounter==11){
                     printHullPoints();
                 }
                 if (!fs.existsSync(y4mOutput)) {
@@ -170,16 +170,16 @@ function psnrcal(i,length,breadth,y4mOutput,finalOutput,psnrBitrateCounter) {
 }
 
 function keepItRunning(i,length,breadth,psnrBitrateCounter){
-    if(length==640&&breadth==480&&i==38){
-        length=1080; breadth=720;i=18;
+    if(length==640&&breadth==480&&i==28){
+        length=1080; breadth=720;i=13;
         processingInputFile(i,length,breadth,psnrBitrateCounter+1);
     }
-    else if(length==1080&&breadth==720&&i==38)
+    else if(length==1080&&breadth==720&&i==28)
     {
-        length=1920; breadth=1080;i=18;
+        length=1920; breadth=1080;i=13;
         processingInputFile(i,length,breadth,psnrBitrateCounter+1);
     }
-    else if (length==1920&&breadth==1080&&i==38) {
+    else if (length==1920&&breadth==1080&&i==28) {
         return 1;
     }
     else{
@@ -200,6 +200,67 @@ function printHullPoints() {
 
     var hull = require('../lib/hull.js');
     var hullPoints = new Array(hull(psnrBitrateList,Infinity));
+
+    var hull2Darr = new Array();
+
+
+    var hullFile = "../resource/reverse/TOS10hull.txt";
+    fs.writeFile(hullFile, '', function () {
+        console.log('done overwriting contents of hull file if it exists!')
+    });
+    var hullstream = fs.createWriteStream(hullFile, {flags: 'a'});
+
+    hullstream.write("Here come the Hull Points");
+    console.log("Here come the Hull Points");
+    console.log("length of hull points returned by original hull method:: "+hullPoints.length);
+    for (var r = 0; r < hullPoints.length; r++) {
+        hullstream.write("\n"+ "value of r::"+r);
+        for (var k = 0; k < hullPoints[r].length; k++) {
+            hullstream.write("\n"+ "HullPSNR:"+hullPoints[r][k][0] + "...HullBitrate:" + hullPoints[r][k][1]);
+            console.log("\n"+ "HullPSNR:"+hullPoints[r][k][0] + "...HullBitrate:" + hullPoints[r][k][1]);
+
+        }
+
+    }
+    var hull2D = new Array(hullPoints(0).length);
+    hull2D.push(hullPoints[0]);
+
+
+    var arr640 = new Array(4);
+    var arr720 = new Array(4);
+    var arr1080 = new Array(4);
+    for (var i = 0; i < 4; i++) {
+        arr640[i] = new Array(2);
+        arr720[i] = new Array(2);
+        arr1080[i] = new Array(2);
+    }
+
+    arr640.push(psnrBitrateList[0]);
+    arr640.push(psnrBitrateList[1]);
+    arr640.push(psnrBitrateList[2]);
+    arr640.push(psnrBitrateList[3]);
+    arr720.push(psnrBitrateList[4]);
+    arr720.push(psnrBitrateList[5]);
+    arr720.push(psnrBitrateList[6]);
+    arr720.push(psnrBitrateList[7]);
+    arr1080.push(psnrBitrateList[8]);
+    arr1080.push(psnrBitrateList[9]);
+    arr1080.push(psnrBitrateList[10]);
+    arr1080.push(psnrBitrateList[11]);
+
+    arr640 = arr640.sort(function(a,b) {
+        return a[0] - b[0];
+    });
+    arr720 = arr720.sort(function(a,b) {
+        return a[0] - b[0];
+    });
+    arr1080 = arr1080.sort(function(a,b) {
+        return a[0] - b[0];
+    });
+    hull2D = hull2D.sort(function(a,b) {
+        return a[0] - b[0];
+    });
+
 
     /***************Highchart Start**********************/
     var jsdom = require('jsdom');
@@ -289,8 +350,7 @@ function printHullPoints() {
         yAxis: {
             title: {
                 text: 'PSNR'
-            },
-            min: 0
+            }
         },
         tooltip: {
             headerFormat: '<b>{series.name}</b><br>',
@@ -312,35 +372,19 @@ function printHullPoints() {
         // that in JavaScript, months start at 0 for January, 1 for February etc.
         series: [{
             name: "480p",
-            data: [
-                [psnrBitrateList[0][1],psnrBitrateList[0][0]],
-                [psnrBitrateList[1][1],psnrBitrateList[1][0]],
-                [psnrBitrateList[2][1],psnrBitrateList[2][0]],
-                [psnrBitrateList[3][1],psnrBitrateList[3][0]],
-                [psnrBitrateList[4][1],psnrBitrateList[4][0]],
-                [psnrBitrateList[5][1],psnrBitrateList[5][0]]
-            ]
+            data: arr640
+
         }, {
             name: "720p",
-            data: [
-                [psnrBitrateList[6][1],psnrBitrateList[6][0]],
-                [psnrBitrateList[7][1],psnrBitrateList[7][0]],
-                [psnrBitrateList[8][1],psnrBitrateList[8][0]],
-                [psnrBitrateList[9][1],psnrBitrateList[9][0]],
-                [psnrBitrateList[10][1],psnrBitrateList[10][0]],
-                [psnrBitrateList[11][1],psnrBitrateList[11][0]]
-            ]
+            data: arr720
         }, {
             name: "1080p",
-            data: [
-                [psnrBitrateList[12][1],psnrBitrateList[12][0]],
-                [psnrBitrateList[13][1],psnrBitrateList[13][0]],
-                [psnrBitrateList[14][1],psnrBitrateList[14][0]],
-                [psnrBitrateList[15][1],psnrBitrateList[15][0]],
-                [psnrBitrateList[16][1],psnrBitrateList[16][0]],
-                [psnrBitrateList[17][1],psnrBitrateList[17][0]]
-            ]
-        }]
+            data: arr1080
+        },
+            {
+                name: "Convex hull",
+                data:hull2D
+            }]
     });
     var svg = win.document.getElementById('container').innerHTML;
     var chartFile="../resource/TOS10Chart.svg";
@@ -348,24 +392,6 @@ function printHullPoints() {
         console.log('Wrote ' + svg.length + ' bytes to ' + 'TOS10Chart.svg.');
     });
     /***************Highchart End*********************/
-
-    var hullFile = "../resource/reverse/TOS10hull.txt";
-    fs.writeFile(hullFile, '', function () {
-        console.log('done overwriting contents of hull file if it exists!')
-    });
-    var hullstream = fs.createWriteStream(hullFile, {flags: 'a'});
-
-    hullstream.write("Here come the Hull Points");
-    console.log("Here come the Hull Points");
-
-    for (var r = 0; r < hullPoints.length; r++) {
-        for (var k = 0; k < hullPoints[r].length; k++) {
-            hullstream.write("\n"+ "HullPSNR:"+hullPoints[r][k][0] + "...HullBitrate:" + hullPoints[r][k][1]);
-            console.log("\n"+ "HullPSNR:"+hullPoints[r][k][0] + "...HullBitrate:" + hullPoints[r][k][1]);
-
-        }
-
-    }
 }
 
 //mainFn();
